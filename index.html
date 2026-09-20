@@ -16,6 +16,13 @@
   .soon{background:#fff;border:2px dashed var(--mint);border-radius:14px;padding:24px;color:var(--gray);}
   code{background:#e6f7ef;padding:2px 6px;border-radius:6px;}
   footer{margin-top:40px;color:var(--gray);font-size:13px;}
+  .changelog{margin-top:32px;text-align:left;background:#fff;border-radius:14px;padding:20px 24px;}
+  .changelog h2{font-size:15px;color:var(--gray);margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em;}
+  .changelog h3{font-size:15px;color:var(--green);margin:16px 0 6px;}
+  .changelog h3:first-of-type{margin-top:0;}
+  .changelog ul{margin:0 0 8px;padding-left:20px;}
+  .changelog li{margin:4px 0;font-size:14px;}
+  .changelog p{font-size:14px;margin:4px 0;}
 </style>
 </head>
 <body>
@@ -24,26 +31,92 @@
   <p class="sub">Timbratura NFC per PeopleSmart (Zucchetti)</p>
   <div id="target">
     <div class="soon">
-      App non ancora pubblicata qui. Se hai ricevuto l'APK direttamente, installalo da lì;
+      App non ancora pubblicata qui. Se hai ricevuto l'APK/IPA direttamente, installalo da lì;
       altrimenti torna a controllare questa pagina.
     </div>
   </div>
+  <div id="changelog"></div>
   <footer>michelepra/pstimbra</footer>
 </div>
 <script>
+// Sanificazione minima: nessuna libreria markdown (pagina statica, nessuna
+// build). Il body della release segue la sola convenzione documentata nel
+// README ("### Novità" / "### Correzioni" + elenchi puntati "- "): questo
+// convertitore copre solo quella, non markdown arbitrario.
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function renderChangelog(markdown) {
+  if (!markdown || !markdown.trim()) return '';
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  let html = '';
+  let inList = false;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const heading = line.match(/^#{2,3}\s+(.*)$/);
+    const bullet = line.match(/^[-*]\s+(.*)$/);
+    if (heading) {
+      closeList();
+      html += `<h3>${escapeHtml(heading[1])}</h3>`;
+    } else if (bullet) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${escapeHtml(bullet[1])}</li>`;
+    } else {
+      closeList();
+      html += `<p>${escapeHtml(line)}</p>`;
+    }
+  }
+  closeList();
+  return html;
+}
+
 (async () => {
   const el = document.getElementById('target');
+  const changelogEl = document.getElementById('changelog');
   try {
     const res = await fetch('https://api.github.com/repos/michelepra/pstimbra-get/releases/latest');
     if (!res.ok) return;
     const rel = await res.json();
-    const apk = (rel.assets || []).find(a => a.name.toLowerCase().endsWith('.apk'));
-    if (!apk) return;
+    const assets = rel.assets || [];
+    const apk = assets.find(a => a.name.toLowerCase().endsWith('.apk'));
+    const ipa = assets.find(a => a.name.toLowerCase().endsWith('.ipa'));
+    // Il solo .ipa non e' installabile da Safari: serve il manifest OTA
+    // (vedi README, "Pubblicare una release iOS (IPA)") caricato come asset
+    // aggiuntivo della stessa release.
+    const manifest = assets.find(a => a.name.toLowerCase().endsWith('.plist'));
+
+    let buttons = '';
+    if (apk) {
+      buttons += `
+        <a class="btn" href="${apk.browser_download_url}">Scarica per Android (${rel.tag_name})</a>
+        <p class="sub" style="margin:10px 0 0">Consenti "sorgenti sconosciute" per installare.</p>
+      `;
+    }
+    if (ipa && manifest) {
+      const otaUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifest.browser_download_url)}`;
+      buttons += `
+        <a class="btn${apk ? ' secondary' : ''}" href="${otaUrl}">Scarica per iOS (${rel.tag_name})</a>
+        <p class="sub" style="margin:10px 0 0">Da aprire con Safari sul dispositivo; richiede che il dispositivo sia registrato nel profilo ad-hoc.</p>
+      `;
+    }
+    if (!buttons) return;
+
     el.innerHTML = `
-      <a class="btn" href="${apk.browser_download_url}">Scarica APK (${rel.tag_name})</a><br>
+      ${buttons}
       <a class="btn secondary" href="https://github.com/michelepra/pstimbra-get/releases/latest">Vedi la release</a>
-      <p class="sub" style="margin-top:20px">Android: consenti "sorgenti sconosciute" per installare.</p>
     `;
+
+    const changelogHtml = renderChangelog(rel.body);
+    if (changelogHtml) {
+      changelogEl.innerHTML = `
+        <div class="changelog">
+          <h2>Novità di ${rel.tag_name}</h2>
+          ${changelogHtml}
+        </div>
+      `;
+    }
   } catch (e) { /* offline o rate-limit: resta il messaggio "in arrivo" */ }
 })();
 </script>
