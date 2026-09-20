@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PSTimbra — scarica l'app</title>
+<style>
+  :root{ --green:#0a5e42; --mint:#7fe6be; --bg:#f2fdf8; --text:#17301f; --gray:#5b6b63; }
+  html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);}
+  .wrap{max-width:480px;margin:0 auto;padding:48px 24px;text-align:center;}
+  h1{color:var(--green);font-size:40px;margin:0 0 4px;}
+  p.sub{color:var(--gray);margin:0 0 32px;font-size:15px;}
+  .btn{display:inline-block;background:var(--green);color:#fff;text-decoration:none;font-weight:700;
+       padding:16px 28px;border-radius:14px;font-size:18px;}
+  .btn.secondary{background:#fff;color:var(--green);border:2px solid var(--green);margin-top:12px;}
+  .soon{background:#fff;border:2px dashed var(--mint);border-radius:14px;padding:24px;color:var(--gray);}
+  code{background:#e6f7ef;padding:2px 6px;border-radius:6px;}
+  footer{margin-top:40px;color:var(--gray);font-size:13px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PSTimbra</h1>
+  <p class="sub">Timbratura NFC per PeopleSmart (Zucchetti)</p>
+  <div id="target">
+    <div class="soon">
+      App non ancora pubblicata qui. Se hai ricevuto l'APK direttamente, installalo da lì;
+      altrimenti torna a controllare questa pagina.
+    </div>
+  </div>
+  <footer>michelepra/pstimbra</footer>
+</div>
+<script>
+(async () => {
+  const el = document.getElementById('target');
+  try {
+    const res = await fetch('https://api.github.com/repos/michelepra/pstimbra-get/releases/latest');
+    if (!res.ok) return;
+    const rel = await res.json();
+    const apk = (rel.assets || []).find(a => a.name.toLowerCase().endsWith('.apk'));
+    if (!apk) return;
+    el.innerHTML = `
+      <a class="btn" href="${apk.browser_download_url}">Scarica APK (${rel.tag_name})</a><br>
+      <a class="btn secondary" href="https://github.com/michelepra/pstimbra-get/releases/latest">Vedi la release</a>
+      <p class="sub" style="margin-top:20px">Android: consenti "sorgenti sconosciute" per installare.</p>
+    `;
+  } catch (e) { /* offline o rate-limit: resta il messaggio "in arrivo" */ }
+})();
+</script>
+</body>
+</html>
