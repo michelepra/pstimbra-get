@@ -17,6 +17,8 @@
   code{background:#e6f7ef;padding:2px 6px;border-radius:6px;}
   footer{margin-top:40px;color:var(--gray);font-size:13px;}
   .changelog{margin-top:32px;text-align:left;background:#fff;border-radius:14px;padding:20px 24px;}
+  .beta-note{background:#fff7ed;border:1px solid #f59e0b;color:#92400e;border-radius:10px;
+       padding:10px 14px;font-size:13px;font-weight:700;margin:0 0 16px;}
   .changelog h2{font-size:15px;color:var(--gray);margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em;}
   .changelog h3{font-size:15px;color:var(--green);margin:16px 0 6px;}
   .changelog h3:first-of-type{margin-top:0;}
@@ -72,13 +74,86 @@ function renderChangelog(markdown) {
   return html;
 }
 
+// Estrae major.minor.patch + eventuale prerelease da un tag (`v1.3.0` o
+// `v1.3.0-beta.2`); stessa logica di `pstimbra/lib/update_service.dart`
+// (`_parseSemver`) — le due implementazioni vanno tenute allineate.
+// `null` se il tag non e' un semver riconoscibile.
+function parseSemver(raw) {
+  if (!raw) return null;
+  const m = /(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?/.exec(raw);
+  if (!m) return null;
+  return {
+    major: parseInt(m[1], 10),
+    minor: parseInt(m[2], 10),
+    patch: parseInt(m[3], 10),
+    prerelease: m[4] ? m[4].split('.') : [],
+  };
+}
+
+// Precedenza semver: >0 se `a` e' piu' recente di `b`. A parita' di
+// major.minor.patch una release finale supera sempre una prerelease (regola
+// standard, vedi https://semver.org/#spec-item-11 e la stessa logica in
+// `pstimbra/lib/update_service.dart`, `_compareVersions`).
+function compareVersions(a, b) {
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  if (a.patch !== b.patch) return a.patch - b.patch;
+  if (a.prerelease.length === 0 && b.prerelease.length === 0) return 0;
+  if (a.prerelease.length === 0) return 1;
+  if (b.prerelease.length === 0) return -1;
+  const len = Math.min(a.prerelease.length, b.prerelease.length);
+  for (let i = 0; i < len; i++) {
+    const ai = a.prerelease[i];
+    const bi = b.prerelease[i];
+    if (ai === bi) continue;
+    const an = /^\d+$/.test(ai) ? parseInt(ai, 10) : null;
+    const bn = /^\d+$/.test(bi) ? parseInt(bi, 10) : null;
+    if (an !== null && bn !== null) return an - bn;
+    if (an !== null) return -1;
+    if (bn !== null) return 1;
+    return ai < bi ? -1 : (ai > bi ? 1 : 0);
+  }
+  return a.prerelease.length - b.prerelease.length;
+}
+
+// Sceglie, da un elenco di release (`GET /releases`, canale beta), quella
+// con precedenza semver piu' alta: a differenza di `/releases/latest`
+// (endpoint dedicato, usato dal canale stable) GitHub non garantisce un
+// ordine per l'elenco, quindi non ci si affida al primo elemento. Include
+// di proposito anche le release non-prerelease: il canale beta e' un'unione
+// (stable + prerelease), non un sottoinsieme. `null` se nessun tag e' un
+// semver riconoscibile.
+function selectLatestRelease(releases) {
+  let best = null;
+  let bestVersion = null;
+  for (const release of releases) {
+    const version = parseSemver(release.tag_name);
+    if (!version) continue;
+    if (!bestVersion || compareVersions(version, bestVersion) > 0) {
+      best = release;
+      bestVersion = version;
+    }
+  }
+  return best;
+}
+
 (async () => {
   const el = document.getElementById('target');
   const changelogEl = document.getElementById('changelog');
+  // Canale beta: solo via `?channel=beta` esplicito, mai il default — il
+  // link/QR stampato sulle card NFC deve sempre mostrare la stable (vedi
+  // README). Stesso canale, stessa scelta, della voce di menu "Canale beta"
+  // dell'app (vedi `pstimbra/lib/config_store.dart`, `UpdateChannel`).
+  const beta = new URLSearchParams(location.search).get('channel') === 'beta';
   try {
-    const res = await fetch('https://api.github.com/repos/michelepra/pstimbra-get/releases/latest');
+    const url = beta
+      ? 'https://api.github.com/repos/michelepra/pstimbra-get/releases?per_page=10'
+      : 'https://api.github.com/repos/michelepra/pstimbra-get/releases/latest';
+    const res = await fetch(url);
     if (!res.ok) return;
-    const rel = await res.json();
+    const payload = await res.json();
+    const rel = beta ? selectLatestRelease(payload) : payload;
+    if (!rel) return;
     const assets = rel.assets || [];
     const apk = assets.find(a => a.name.toLowerCase().endsWith('.apk'));
     const ipa = assets.find(a => a.name.toLowerCase().endsWith('.ipa'));
@@ -87,7 +162,9 @@ function renderChangelog(markdown) {
     // aggiuntivo della stessa release.
     const manifest = assets.find(a => a.name.toLowerCase().endsWith('.plist'));
 
-    let buttons = '';
+    let buttons = beta
+      ? '<p class="beta-note">⚠ Canale beta — build di test, puo\' contenere bug</p>'
+      : '';
     if (apk) {
       buttons += `
         <a class="btn" href="${apk.browser_download_url}">Scarica per Android (${rel.tag_name})</a>
@@ -101,11 +178,12 @@ function renderChangelog(markdown) {
         <p class="sub" style="margin:10px 0 0">Da aprire con Safari sul dispositivo; richiede che il dispositivo sia registrato nel profilo ad-hoc.</p>
       `;
     }
-    if (!buttons) return;
+    if (!apk && !ipa) return;
 
+    const releaseUrl = beta ? rel.html_url : 'https://github.com/michelepra/pstimbra-get/releases/latest';
     el.innerHTML = `
       ${buttons}
-      <a class="btn secondary" href="https://github.com/michelepra/pstimbra-get/releases/latest">Vedi la release</a>
+      <a class="btn secondary" href="${releaseUrl}">Vedi la release</a>
     `;
 
     const changelogHtml = renderChangelog(rel.body);

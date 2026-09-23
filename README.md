@@ -22,6 +22,11 @@ così non va mai ristampato anche se cambia dove/come si scarica l'app.
   number `+N`, non significativo). L'app di PSTimbra legge questo stesso
   tag (via l'API "latest release" di questo repo) per sapersi dire "c'è
   una versione più recente" — vedi `pstimbra/lib/update_service.dart`.
+- **Canale beta** (opzionale): stesso tag con suffisso `-beta.N` (es.
+  `v1.3.0-beta.1`), marcato **pre-release** su GitHub — `GET
+  /releases/latest` lo esclude nativamente, quindi resta invisibile al
+  canale stable (`index.html` di default, app senza "Canale beta" attivato
+  dal menu). Dettagli: sezione "Come pubblicare una beta" sotto.
 - Il **corpo della release** è il changelog mostrato sia agli utenti sulla
   pagina di download sia nel dialog di aggiornamento in-app: sintetico,
   scritto a mano (non un dump di `git log`), due sole sezioni:
@@ -70,6 +75,40 @@ questo repo) caricato come **secondo asset della stessa release**, che
 Limite non aggirabile con questo meccanismo (non tecnico di questo repo,
 ma della distribuzione ad-hoc Apple): funziona solo sui dispositivi già
 registrati nel provisioning profile usato per firmare l'IPA.
+
+## Come pubblicare una beta (canale beta)
+
+Le beta usano lo stesso meccanismo delle release normali, con due differenze:
+tag con suffisso `-beta.N` e flag **pre-release** attivo. `GET
+/releases/latest` (usato sia da `index.html` in modalità normale sia
+dall'app sul canale stable) esclude nativamente le pre-release: chi non ha
+attivato il canale beta non le vede mai, zero rischio per lo stable.
+
+1. `flutter build apk --release` nel repo `pstimbra`, con `version:` in
+   `pubspec.yaml` nella forma `X.Y.Z-beta.N+B` (es. `1.3.0-beta.1+8`).
+2. **Releases → Draft a new release**, tag `vX.Y.Z-beta.N` (stesso `X.Y.Z`
+   della prossima stable prevista; `N` incrementale per build successive
+   sullo stesso `X.Y.Z`), corpo = changelog, allega l'APK, **spunta "Set as
+   a pre-release"**, pubblica. Con `gh` CLI:
+   `gh release create vX.Y.Z-beta.N app-release.apk --title vX.Y.Z-beta.N
+   --notes-file release-notes.md --prerelease`.
+3. Distribuzione:
+   - **In-app**: chi ha attivato "Canale beta" dal menu dell'app (vedi
+     `pstimbra/lib/config_store.dart`, `UpdateChannel`) riceve la notifica
+     di aggiornamento al prossimo controllo, automatico o da "Verifica
+     aggiornamenti".
+   - **Landing page**: `https://michelepra.github.io/pstimbra-get/?channel=beta`
+     mostra il pulsante di download per l'ultima release del canale beta
+     (stable + prerelease, vince la più recente per precedenza semver) — il
+     link/QR stampato sulle card NFC **non** cambia e continua a mostrare
+     solo lo stable.
+
+Precedenza tra versioni (rilevante pubblicando più beta di fila sullo stesso
+`X.Y.Z`, o passando da beta a stable): a parità di `major.minor.patch` una
+release finale supera sempre una prerelease, e tra due beta vince il numero
+più alto (`1.3.0-beta.2` > `1.3.0-beta.1`) — stessa regola semver
+implementata sia in `pstimbra/lib/update_service.dart` sia in questo
+`index.html`: se una cambia va aggiornata anche l'altra.
 
 ## Quando si pubblica su Play Store / App Store
 
