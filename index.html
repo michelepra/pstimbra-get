@@ -19,6 +19,8 @@
   .changelog{margin-top:32px;text-align:left;background:#fff;border-radius:14px;padding:20px 24px;}
   .beta-note{background:#fff7ed;border:1px solid #f59e0b;color:#92400e;border-radius:10px;
        padding:10px 14px;font-size:13px;font-weight:700;margin:0 0 16px;}
+  .altstore-help{display:none;margin-top:16px;background:#fff7ed;border:1px solid #f59e0b;color:#92400e;border-radius:10px;padding:12px 16px;font-size:13px;text-align:left;}
+  .altstore-help a{color:#92400e;font-weight:700;}
   .changelog h2{font-size:15px;color:var(--gray);margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em;}
   .changelog h3{font-size:15px;color:var(--green);margin:16px 0 6px;}
   .changelog h3:first-of-type{margin-top:0;}
@@ -36,6 +38,21 @@
       App non ancora pubblicata qui. Se hai ricevuto l'APK/IPA direttamente, installalo da lì;
       altrimenti torna a controllare questa pagina.
     </div>
+  </div>
+  <div id="altstore-help" class="altstore-help">
+    <strong>Non succede nulla?</strong> Serve AltStore installato sul dispositivo —
+    operazione <strong>una tantum</strong>, gratis, nessun account Apple a pagamento:
+    <a href="https://faq.altstore.io/getting-started/how-to-install-altstore" target="_blank" rel="noopener">guida all'installazione</a>.
+    Fatto una volta, questo stesso pulsante installa e aggiorna PSTimbra a ogni release,
+    sempre passando da questa pagina. L'app smette di aprirsi dopo 7 giorni se AltStore
+    non riesce a rinnovarla da sola: succede da sola solo se tieni AltServer avviato sul
+    PC usato per il setup e il telefono torna di tanto in tanto sulla stessa rete Wi-Fi —
+    oppure, senza bisogno del PC, attivando una tantum
+    <a href="https://faq.altstore.io/altstore-classic/remote-altservers" target="_blank" rel="noopener">"Remote AltServer"</a>
+    nelle impostazioni di AltStore. Senza nessuna delle due, vai in AltStore e tocca
+    "Refresh All" quando serve. Preferisci
+    SideStore o Sideloadly? <a href="https://github.com/michelepra/pstimbra-get#alternative-ad-altstore-per-linstallazione-gratuita-sidestore-sideloadly" target="_blank" rel="noopener">confronto e vincoli di ciascuno</a> — scarica comunque l'IPA dalla
+    <a href="https://github.com/michelepra/pstimbra-get/releases/latest" target="_blank" rel="noopener">pagina della release</a>.
   </div>
   <div id="changelog"></div>
   <footer>michelepra/pstimbra</footer>
@@ -136,6 +153,26 @@ function selectLatestRelease(releases) {
   }
   return best;
 }
+// Installazione iOS gratuita (senza account Apple a pagamento): il pulsante
+// punta a `altstore://install?url=...`, che AltStore intercetta per
+// scaricare/firmare/installare l'ipa in locale con l'Apple ID gratuito
+// dell'utente — vedi pstimbra/docs/ios-build-senza-mac.md, "Strada B". Serve
+// AltStore già installato (una tantum): se nessuna app intercetta lo schema
+// (la pagina resta in primo piano), mostriamo le istruzioni di setup.
+function scheduleAltStoreFallbackCheck() {
+  let handedOff = false;
+  const markHandedOff = () => { handedOff = true; };
+  document.addEventListener('visibilitychange', markHandedOff, { once: true });
+  window.addEventListener('blur', markHandedOff, { once: true });
+  setTimeout(() => {
+    document.removeEventListener('visibilitychange', markHandedOff);
+    window.removeEventListener('blur', markHandedOff);
+    if (!handedOff) {
+      const help = document.getElementById('altstore-help');
+      if (help) help.style.display = 'block';
+    }
+  }, 1800);
+}
 
 (async () => {
   const el = document.getElementById('target');
@@ -172,10 +209,20 @@ function selectLatestRelease(releases) {
       `;
     }
     if (ipa && manifest) {
+      // Strada A (a pagamento): IPA firmato ad-hoc + manifest OTA, un tap e
+      // basta — vedi pstimbra-get/README.md, "Pubblicare una release iOS (IPA)".
       const otaUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifest.browser_download_url)}`;
       buttons += `
         <a class="btn${apk ? ' secondary' : ''}" href="${otaUrl}">Scarica per iOS (${rel.tag_name})</a>
         <p class="sub" style="margin:10px 0 0">Da aprire con Safari sul dispositivo; richiede che il dispositivo sia registrato nel profilo ad-hoc.</p>
+      `;
+    } else if (ipa) {
+      // Strada B (gratuita): nessun manifest pubblicato, IPA non firmato
+      // prodotto da Codemagic — installabile solo via AltStore, vedi
+      // pstimbra/docs/ios-build-senza-mac.md, "Strada B".
+      buttons += `
+        <a id="altstore-btn" class="btn${apk ? ' secondary' : ''}" href="altstore://install?url=${encodeURIComponent(ipa.browser_download_url)}">Installa per iOS via AltStore (${rel.tag_name})</a>
+        <p class="sub" style="margin:10px 0 0">Richiede AltStore sul dispositivo (una tantum, gratis, nessun account Apple a pagamento). Si rinnova da sola ogni 7 giorni se AltServer resta raggiungibile sulla stessa rete Wi-Fi, o senza PC con "Remote AltServer" (una tantum nelle impostazioni di AltStore) — altrimenti va rinnovata a mano.</p>
       `;
     }
     if (!apk && !ipa) return;
@@ -185,6 +232,8 @@ function selectLatestRelease(releases) {
       ${buttons}
       <a class="btn secondary" href="${releaseUrl}">Vedi la release</a>
     `;
+    const altstoreBtn = document.getElementById('altstore-btn');
+    if (altstoreBtn) altstoreBtn.addEventListener('click', scheduleAltStoreFallbackCheck);
 
     const changelogHtml = renderChangelog(rel.body);
     if (changelogHtml) {
